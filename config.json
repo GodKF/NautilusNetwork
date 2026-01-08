@@ -1,0 +1,16 @@
+{
+    "github_profile": "https://github.com/DasVicgeta",
+    "branch": "main",
+    "idioma": "es",
+    "ram": {
+        "proxy": "526M",
+        "lobby": "1GB",
+        "survival": "1G"
+    },
+    "urls": {
+        "proxy": "https://api.papermc.io/v2/projects/velocity/versions/3.3.0-SNAPSHOT/builds/400/downloads/velocity-3.3.0-SNAPSHOT-400.jar",
+        "lobby": "https://api.papermc.io/v2/projects/paper/versions/1.21.1/builds/120/downloads/paper-1.21.1-120.jar",
+        "survival": "https://api.papermc.io/v2/projects/paper/versions/1.21.1/builds/120/downloads/paper-1.21.1-120.jar"
+    },
+    "playit_url": "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64"
+}
