@@ -6,7 +6,7 @@ try:import requests as G
 except:B.system('pip install requests');import requests as G
 finally:import os as B,base64 as J,glob as D,time
 if B.name==E:
-	C='MSX';B.system('title MSX Launcher')
+	C='MSX';B.system('title Network')
 	if not B.path.exists(C):B.mkdir(C)
 else:C=F
 if B.name==E:A=f"{C}\\.gitignore"
