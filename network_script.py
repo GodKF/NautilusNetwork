@@ -3,6 +3,7 @@ import subprocess
 import time
 import datetime
 import json
+import threading
 
 # ───────────────────────────────
 # CONFIGURACIÓN GENERAL
@@ -10,6 +11,9 @@ import json
 CONFIG_FILE = "config.json"
 ROOT_DIR = os.getcwd()
 NETWORK_DIR = os.path.join(ROOT_DIR, "my_network")
+LOGS_DIR = os.path.join(ROOT_DIR, "logs")
+
+WATCHDOG_INTERVAL = 15  # segundos
 
 CLR = {
     "CYAN": "\033[96m",
@@ -61,6 +65,32 @@ def header(title):
 """)
 
 # ───────────────────────────────
+# PANTALLA DE CARGA
+# ───────────────────────────────
+def splash_screen():
+    clear()
+    print(f"{CLR['CYAN']}{CLR['BOLD']}")
+    print("Verificando sistema...")
+    time.sleep(0.8)
+    print("Cargando dependencias...")
+    time.sleep(0.8)
+    print("Preparando Network...")
+    time.sleep(0.8)
+    clear()
+
+    print(f"""{CLR['CYAN']}{CLR['BOLD']}
+███╗   ██╗███████╗████████╗██╗    ██╗ ██████╗ ██████╗ ██╗  ██╗
+████╗  ██║██╔════╝╚══██╔══╝██║    ██║██╔═══██╗██╔══██╗██║ ██╔╝
+██╔██╗ ██║█████╗     ██║   ██║ █╗ ██║██║   ██║██████╔╝█████╔╝ 
+██║╚██╗██║██╔══╝     ██║   ██║███╗██║██║   ██║██╔══██╗██╔═██╗ 
+██║ ╚████║███████╗   ██║   ╚███╔███╔╝╚██████╔╝██║  ██║██║  ██╗
+╚═╝  ╚═══╝╚══════╝   ╚═╝    ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+
+                NetworkSystem
+{CLR['END']}""")
+    time.sleep(1.5)
+
+# ───────────────────────────────
 # CONFIG
 # ───────────────────────────────
 def load_config():
@@ -84,13 +114,18 @@ config = load_config()
 # ───────────────────────────────
 def setup_tools():
     header("INICIALIZANDO SISTEMA")
-    print("• Verificando dependencias...")
+    print("• Instalando Java (JDK 8, 11, 17, 21)...")
+
     run(
         "sudo apt-get update -y && "
-        "sudo apt-get install -y screen openjdk-17-jdk openjdk-21-jdk wget git git-lfs"
+        "sudo apt-get install -y screen wget git git-lfs "
+        "openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk openjdk-21-jdk"
     )
+
     os.makedirs(NETWORK_DIR, exist_ok=True)
-    print(f"{CLR['GREEN']}✓ Sistema listo{CLR['END']}")
+    os.makedirs(LOGS_DIR, exist_ok=True)
+
+    print(f"{CLR['GREEN']}✓ Todos los JDK instalados correctamente{CLR['END']}")
     time.sleep(1)
 
 def is_running(name):
@@ -104,6 +139,39 @@ def is_running(name):
 # ───────────────────────────────
 # NETWORK
 # ───────────────────────────────
+def start_single_server(name):
+    if is_running(name):
+        return
+
+    path = os.path.join(NETWORK_DIR, name)
+    os.makedirs(path, exist_ok=True)
+
+    jar_path = os.path.join(path, "server.jar")
+    if not os.path.exists(jar_path):
+        print(f"{CLR['RED']}✗ server.jar no encontrado en {path}{CLR['END']}")
+        return
+
+    # Selección de Java
+    if name == "lobby":
+        java_bin = "/usr/lib/jvm/java-8-openjdk-amd64/bin/java"
+        java_flags = ""   # ❗ Paper 1.8 NO flags
+    elif name == "proxy":
+        java_bin = "/usr/lib/jvm/java-17-openjdk-amd64/bin/java"
+        ram = config["ram"].get(name, "1G")
+        java_flags = f"-Xms{ram} -Xmx{ram}"
+    else:
+        java_bin = "/usr/lib/jvm/java-17-openjdk-amd64/bin/java"
+        ram = config["ram"].get(name, "2G")
+        java_flags = f"-Xms{ram} -Xmx{ram}"
+
+    cmd = (
+        f"cd '{path}' && "
+        f"'{java_bin}' {java_flags} -jar server.jar"
+    )
+
+    run(f"screen -dmS {name} bash -lc \"{cmd}\"", silent=False)
+
+
 def start_network_native():
     header("INICIO DE SERVIDORES")
 
@@ -129,26 +197,39 @@ def start_network_native():
             print(f"{CLR['YELLOW']}⚠ {name} ya está activo{CLR['END']}")
             continue
 
-        path = os.path.join(NETWORK_DIR, name)
-        os.makedirs(path, exist_ok=True)
-
-        ram = config["ram"].get(name, "1G")
-        cmd = f"cd {path} && java -Xms{ram} -Xmx{ram} -jar server.jar nogui"
-
-        run(f"screen -dmS {name} bash -c '{cmd}'", silent=False)
-        print(f"{CLR['GREEN']}✓ {name} iniciado ({ram}){CLR['END']}")
+        start_single_server(name)
+        print(f"{CLR['GREEN']}✓ {name} iniciado{CLR['END']}")
         time.sleep(0.7)
 
     pause()
+
+# ───────────────────────────────
+# WATCHDOG
+# ───────────────────────────────
+def watchdog_loop():
+    global watchdog_active
+    while True:
+        if watchdog_active:
+            for server in config["urls"].keys():
+                if not is_running(server):
+                    print(
+                        f"{CLR['YELLOW']}[WATCHDOG]{CLR['END']} "
+                        f"{server} caído → reiniciando"
+                    )
+                    start_single_server(server)
+        time.sleep(WATCHDOG_INTERVAL)
 
 # ───────────────────────────────
 # SISTEMA
 # ───────────────────────────────
 def kill_all_processes():
     header("CIERRE DEL SISTEMA")
-    print("• Deteniendo servicios...")
-    run("pkill -f java")
-    run("pkill playit")
+    print("• Cerrando sesiones screen...")
+
+    for name in list(config["urls"].keys()) + ["playit"]:
+        if is_running(name):
+            run(f"screen -S {name} -X quit", silent=False)
+
     run("screen -wipe")
     print(f"{CLR['GREEN']}✓ Todo detenido correctamente{CLR['END']}")
     pause()
@@ -163,30 +244,6 @@ def make_backup_final():
     run(f"git push origin {config['branch']}")
     print(f"{CLR['GREEN']}✓ Backup enviado a GitHub{CLR['END']}")
     pause()
-
-# ───────────────────────────────
-# AJUSTES
-# ───────────────────────────────
-def settings_menu():
-    while True:
-        header("CONFIGURACIÓN")
-        print(f"""
-1) RAM Proxy     [{config['ram']['proxy']}]
-2) RAM Lobby     [{config['ram']['lobby']}]
-3) RAM Survival  [{config['ram']['survival']}]
-4) Rama Git      [{config['branch']}]
-
-0) Volver
-""")
-        opc = input("➤ ")
-
-        if opc == "1": config["ram"]["proxy"] = input("Nueva RAM Proxy: ")
-        elif opc == "2": config["ram"]["lobby"] = input("Nueva RAM Lobby: ")
-        elif opc == "3": config["ram"]["survival"] = input("Nueva RAM Survival: ")
-        elif opc == "4": config["branch"] = input("Nueva rama: ")
-        elif opc == "0": break
-
-        save_config(config)
 
 # ───────────────────────────────
 # MENÚ PRINCIPAL
@@ -231,5 +288,13 @@ def main_menu():
 # MAIN
 # ───────────────────────────────
 if __name__ == "__main__":
+    splash_screen()
     setup_tools()
+
+    watchdog_thread = threading.Thread(
+        target=watchdog_loop,
+        daemon=True
+    )
+    watchdog_thread.start()
+
     main_menu()
